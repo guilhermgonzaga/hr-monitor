@@ -5,8 +5,12 @@
 #include "secrets.h"
 
 // Configurações
+#ifndef LED_BUILTIN
+#define LED_BUILTIN 2
+#endif
 #define PULSE_INPUT_PIN 34
 #define THRESHOLD_WINDOW 150  // Número de amostras para ajuste automático do limiar
+#define LED_TOGGLE_INTERVAL_MS 1000
 #define SEND_INTERVAL_MS 3000
 #define SAMPLE_INTERVAL_MS 10
 
@@ -17,12 +21,15 @@ WiFiUDP udp;
 PubSubClient mqttClient(espClient);
 IPAddress thingsboardServerIP;
 
+unsigned long lastLedToggleTimeMs = 0;
 unsigned long lastSendTimeMs = 0;
 unsigned long lastSampleTimeMs = 0;
 int bpmSum = 70;  // Valor inicial não enviesa muito
 int bpmCount = 1;  // Valor inicial previne div. por 0
 
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
   analogReadResolution(10);
   Serial.begin(115200);
   do {
@@ -31,10 +38,7 @@ void setup() {
 
   // ===== Configurações do PulseSensor =====
   pulseSensor.analogInput(PULSE_INPUT_PIN);
-  // pulseSensor.blinkOnPulse(2);
-  if (pulseSensor.begin()) {
-    Serial.println("PulseSensor iniciado com sucesso.");
-  } else {
+  if (!pulseSensor.begin()) {
     Serial.println("Falha ao iniciar PulseSensor.");
   }
 
@@ -43,6 +47,7 @@ void setup() {
   receiveServerAddress();
   mqttClient.setServer(thingsboardServerIP, THINGSBOARD_PORT);
 
+  lastLedToggleTimeMs = millis();
   lastSampleTimeMs = millis();
   lastSendTimeMs = millis();
 }
@@ -75,6 +80,11 @@ void loop() {
     sendAverageBPM(bpmSum);
     lastSendTimeMs = millis();
   }
+
+  if (millis() - lastLedToggleTimeMs >= LED_TOGGLE_INTERVAL_MS) {
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    lastLedToggleTimeMs = millis();
+  }
 }
 
 void receiveServerAddress() {
@@ -85,9 +95,11 @@ void receiveServerAddress() {
   Serial.print("Aguardando IP do servidor na porta ");
   Serial.println(THINGSBOARD_DISCOVERY_PORT);
 
+  digitalWrite(LED_BUILTIN, HIGH);
   do {
     packetSize = udp.parsePacket();
   } while (packetSize <= 0);
+  digitalWrite(LED_BUILTIN, LOW);
 
   int len = udp.read(buffer, 255);
   buffer[len] = '\0';
